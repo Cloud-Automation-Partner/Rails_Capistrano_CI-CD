@@ -1,0 +1,71 @@
+name: Rails CD Workflow
+
+on:
+  pull_request:
+    branches:
+      - uat
+      - production
+    types:
+      - closed
+  workflow_dispatch:
+jobs:
+  CD:
+    # if: github.event.pull_request.merged == true
+    # if: >
+    #   github.event.workflow_run == 'Rails CI Workflow' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      SERVER_USER: ${{ secrets.SERVER_USER }}
+      SERVER_IP: ${{ secrets.SERVER_IP }}
+
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VERSION }}
+
+      - name: Install Ruby and gems
+        uses: ruby/setup-ruby@55283cc23133118229fd3f97f9336ee23a179fcf # v1.146.0
+        with:
+          bundler-cache: true
+
+      - name: Install Bundler
+        run: gem install bundler
+      - name: Install Dependencies
+        run: |
+           bundle install
+
+      - name: Install Capistrano
+        run: |
+          gem install capistrano
+          
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf "%s" "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/QaServer.pem
+          chmod 700 ~/.ssh
+          chmod 600 ~/.ssh/QaServer.pem
+
+        env:
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_IP: ${{ secrets.SERVER_IP }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Determine branch and deploy
+        run: |
+          if [[ $GITHUB_REF == 'refs/heads/production' ]]; then
+            bundle exec cap prod deploy
+          elif [[ $GITHUB_REF == 'refs/heads/uat' ]]; then
+            bundle exec cap uat deploy
+          else
+            echo "No deployment for branch $GITHUB_REF"
+          fi
+        env:
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_IP: ${{ secrets.SERVER_IP }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
