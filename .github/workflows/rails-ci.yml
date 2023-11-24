@@ -1,1 +1,79 @@
+name: Rails CI Workflow
 
+on:
+  pull_request:
+    branches:
+      - uat
+      - production
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+jobs:
+  CI-Test:
+    if: github.event.pull_request.merged == false && (github.event.action == 'opened' || github.event.action == 'synchronize' || github.event.action == 'reopened')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:11-alpine
+        ports:
+          - "5432:5432"
+        env:
+          POSTGRES_DB: rails_test
+          POSTGRES_USER: rails
+          POSTGRES_PASSWORD: password
+    env:
+      RAILS_ENV: test
+      DATABASE_URL: "postgres://rails:password@localhost:5432/rails_test"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VERSION }}
+      - name: Clear Bundler cache
+        run: |
+          rm -rf $GITHUB_WORKSPACE/vendor/bundle
+      - name: Install Bundler
+        run: gem install bundler
+      - name: Install Dependencies
+        run: |
+           bundle install
+      - name: Install Ruby and gems
+        uses: ruby/setup-ruby@55283cc23133118229fd3f97f9336ee23a179fcf # v1.146.0
+        with:
+          bundler-cache: true
+      - name: Set up database schema
+        run: bin/rails db:schema:load
+      - name: Install Rspec
+        run: gem install rspec
+      - name: Run tests
+        run: bin/rake
+  CI-Lint:
+    needs: CI-Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VERSION }}
+          
+      - name: Install Ruby and gems
+        uses: ruby/setup-ruby@55283cc23133118229fd3f97f9336ee23a179fcf # v1.146.0
+        with:
+          bundler-cache: true
+      # - name: Security audit dependencies
+      #   run: bin/bundler-audit --update
+      - name: Install Bundler
+        run: gem install bundler
+      - name: Install Dependencies
+        run: bundle install
+      - name: Install Brakeman
+        run: gem install brakeman rubocop rubocop-rails rubocop-rspec rubocop-rails_config
+      - name: Security audit application code
+        run: brakeman --no-exit-on-warn 
+      - name: Lint Ruby files
+        run: rubocop -A
